@@ -1,0 +1,84 @@
+data:
+  train_files: /workspace/racad_fao/data/train.jsonl
+  val_files: /workspace/racad_fao/data/val.jsonl
+
+  train_batch_size: 16          # 每个 step 16 个 prompt
+  max_prompt_length: 512
+  truncation: error             # 禁止静默截断
+  filter_overlong_prompts: false
+  return_raw_chat: true
+
+actor_rollout_ref:
+  model:
+    path: /models/racad_ccb     # CCB SFT 后的 checkpoint
+    enable_gradient_checkpointing: true
+
+  actor:
+    strategy: fsdp
+    ppo_mini_batch_size: 8      # 全局 mini-batch 8 条轨迹
+    ppo_micro_batch_size_per_gpu: 4
+    ppo_epochs: 1
+
+    clip_ratio_low: 0.2
+    clip_ratio_high: 0.3
+
+    use_kl_loss: true
+    kl_loss_coef: 0.001         #loss内 KL
+    optim:
+      lr: 1.0e-6
+
+    fsdp_config:
+      param_offload: true
+
+  ref:
+    fsdp_config:
+      param_offload: true
+    log_prob_micro_batch_size_per_gpu: 4
+
+  rollout:
+    name: vllm
+    mode: async #异步
+    n: 8
+    temperature: 0.7
+    top_p: 1.0
+
+    prompt_length: 512
+    response_length: 4096       # 多轮总预算，按 max_rounds 调整
+    max_model_len: 8192
+
+    gpu_memory_utilization: 0.55
+    tensor_model_parallel_size: 1
+    free_cache_engine: true
+
+    multi_turn:
+      enable: true
+      format: hermes
+
+    agent:
+      default_agent_loop: racad_agent
+      agent_loop_config_path: /workspace/racad_fao/configs/agent_loop.yaml
+      num_workers: 2
+
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  use_kl_in_reward: false
+  kl_penalty: low_var_kl
+  kl_ctrl:
+    type: fixed
+    kl_coef: 0.001
+
+reward_model:
+  enable: true
+  reward_manager: naive
+  custom_reward_function:
+    path: /workspace/racad_fao/racad/rewards/cad_reward.py
+    name: compute_score
+
+trainer:
+  nnodes: 1
+  n_gpus_per_node: 2
+  total_epochs: 1
+  project_name: racad_fao
+  experiment_name: llama3_8b_fao
+  val_before_train: true

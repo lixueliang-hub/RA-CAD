@@ -1,0 +1,3 @@
+- name: racad_agent
+  _target_: racad.agent.racad_loop.RACADAgentLoop
+  max_rounds: 4
